@@ -70,6 +70,10 @@ class TOTALVAE(nn.Module):
 
         * ``'normal'`` - Isotropic normal
         * ``'ln'`` - Logistic normal with normal params N(0, 1)
+    protein_background_prior_mean
+        Array of proteins by batches, the prior initialization for the protein background mean (log scale)
+    protein_background_prior_scale
+        Array of proteins by batches, the prior initialization for the protein background scale (log scale)
     """
 
     def __init__(
@@ -89,8 +93,10 @@ class TOTALVAE(nn.Module):
         log_variational: bool = True,
         gene_likelihood: str = "nb",
         latent_distribution: str = "ln",
-        protein_batch_mask: List[np.ndarray] = None,
+        protein_batch_mask: Optional[List[np.ndarray]] = None,
         encoder_batch: bool = True,
+        protein_background_prior_mean: Optional[np.ndarray] = None,
+        protein_background_prior_scale: Optional[np.ndarray] = None,
     ):
         super().__init__()
         self.gene_dispersion = gene_dispersion
@@ -106,19 +112,33 @@ class TOTALVAE(nn.Module):
         self.protein_batch_mask = protein_batch_mask
 
         # parameters for prior on rate_back (background protein mean)
-        if n_batch > 0:
-            self.background_pro_alpha = torch.nn.Parameter(
-                torch.randn(n_input_proteins, n_batch)
-            )
-            self.background_pro_log_beta = torch.nn.Parameter(
-                torch.clamp(torch.randn(n_input_proteins, n_batch), -10, 1)
-            )
+        if protein_background_prior_mean is None:
+            if n_batch > 0:
+                self.background_pro_alpha = torch.nn.Parameter(
+                    torch.randn(n_input_proteins, n_batch)
+                )
+                self.background_pro_log_beta = torch.nn.Parameter(
+                    torch.clamp(torch.randn(n_input_proteins, n_batch), -10, 1)
+                )
+            else:
+                self.background_pro_alpha = torch.nn.Parameter(
+                    torch.randn(n_input_proteins)
+                )
+                self.background_pro_log_beta = torch.nn.Parameter(
+                    torch.clamp(torch.randn(n_input_proteins), -10, 1)
+                )
         else:
+            if protein_background_prior_mean.shape[1] == 1:
+                init_mean = protein_background_prior_mean.ravel()
+                init_scale = protein_background_prior_scale.ravel()
+            else:
+                init_mean = protein_background_prior_mean
+                init_scale = protein_background_prior_scale
             self.background_pro_alpha = torch.nn.Parameter(
-                torch.randn(n_input_proteins)
+                torch.from_numpy(init_mean.astype(np.float32))
             )
             self.background_pro_log_beta = torch.nn.Parameter(
-                torch.clamp(torch.randn(n_input_proteins), -10, 1)
+                torch.log(torch.from_numpy(init_scale.astype(np.float32)))
             )
 
         if self.gene_dispersion == "gene":
